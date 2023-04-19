@@ -171,6 +171,7 @@ def get_ada_embedding(text):
         "data"
     ][0]["embedding"]
 
+OBJECTIVE_EMBEDDING = get_ada_embedding(OBJECTIVE)
 
 def openai_call(
     prompt: str,
@@ -248,10 +249,14 @@ def task_creation_agent(
 ):
     prompt = f"""
     You are a task creation AI that uses the result of an execution agent to create new tasks with the following objective: {objective},
-    The last completed task has the result: {result}.
+    The last completed task has the result: {result["data"]}.
     This result was based on this task description: {task_description}. These are incomplete tasks: {', '.join(task_list)}.
     Based on the result, create new tasks to be completed by the AI system that do not overlap with incomplete tasks.
     Return the tasks as an array."""
+
+    # DEBUG CODE
+    print("\033[95m\033[1m" + f"{prompt}" + "\033[0m\033[0m")
+
     response = openai_call(prompt)
     new_tasks = response.split("\n") if "\n" in response else [response]
     return [{"task_name": task_name} for task_name in new_tasks]
@@ -280,12 +285,11 @@ def prioritization_agent():
 
 
 # Execute a task based on the objective and five previous tasks 
-def execution_agent(objective: str, task: str) -> str:
+def execution_agent(task: str) -> str:
     """
     Executes a task based on the given objective and previous context.
 
     Args:
-        objective (str): The objective or goal for the AI to perform the task.
         task (str): The task to be executed by the AI.
 
     Returns:
@@ -293,31 +297,29 @@ def execution_agent(objective: str, task: str) -> str:
 
     """
     
-    context = context_agent(query=objective, top_results_num=5)
+    context = context_agent(top_results_num=5)
     # print("\n*******RELEVANT CONTEXT******\n")
     # print(context)
     prompt = f"""
-    You are an AI who performs one task based on the following objective: {objective}\n.
+    You are an AI who performs one task based on the following objective: {OBJECTIVE}\n.
     Take into account these previously completed tasks: {context}\n.
     Your task: {task}\nResponse:"""
     return openai_call(prompt, max_tokens=2000)
 
 
 # Get the top n completed tasks for the objective
-def context_agent(query: str, top_results_num: int):
+def context_agent(top_results_num: int):
     """
-    Retrieves context for a given query from an index of tasks.
+    Retrieves context for the objective from an index of tasks.
 
     Args:
-        query (str): The query or objective for retrieving context.
         top_results_num (int): The number of top results to retrieve.
 
     Returns:
         list: A list of tasks as context for the given query, sorted by relevance.
 
     """
-    query_embedding = get_ada_embedding(query)
-    results = index.query(query_embedding, top_k=top_results_num, include_metadata=True, namespace=OBJECTIVE_PINECONE_COMPAT)
+    results = index.query(OBJECTIVE_EMBEDDING, top_k=top_results_num, include_metadata=True, namespace=OBJECTIVE_PINECONE_COMPAT)
     # print("***** RESULTS *****")
     # print(results)
     sorted_results = sorted(results.matches, key=lambda x: x.score, reverse=True)
@@ -346,7 +348,7 @@ while True:
         print(task['task_name'])
 
         # Send to execution function to complete the task based on the context
-        result = execution_agent(OBJECTIVE, task["task_name"])
+        result = execution_agent(task["task_name"])
         print("\033[93m\033[1m" + "\n*****TASK RESULT*****\n" + "\033[0m\033[0m")
         print(result)
 
